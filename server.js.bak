@@ -1,0 +1,61 @@
+const express = require('express');
+const multer = require('multer');
+const cors = require('cors');
+const { google } = require('googleapis');
+const fs = require('fs');
+const path = require('path');
+
+const app = express();
+app.use(express.static('.'));
+
+app.use(cors({
+    origin: '*', // Allow all origins
+    methods: ['GET', 'POST', 'OPTIONS'], // Specify allowed methods
+    allowedHeaders: ['Content-Type', 'Authorization'] // Specify allowed headers
+}));
+const upload = multer({ dest: 'uploads/' });
+
+app.post('/upload', upload.single('video'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).send('No file uploaded.');
+    }
+
+    try {
+        // Authenticate with Google API
+        const auth = new google.auth.GoogleAuth({
+            keyFile: 'video-testimonial-tool-b475419b14ee.json', // TODO: Replace with your credentials file path
+            scopes: ['https://www.googleapis.com/auth/drive.file'],
+        });
+
+        const driveService = google.drive({ version: 'v3', auth });
+        const fileMetadata = {
+            name: req.file.originalname.webm,
+            parents: ['1rFWVFVdjklduFV90ajBwdAhYHG3xLZd6'] // TODO: Replace with your folder ID if any
+        };
+        const media = {
+            mimeType: req.file.mimetype,
+            body: fs.createReadStream(path.join(__dirname, req.file.path))
+        };
+
+        // Upload file to Google Drive
+        const file = await driveService.files.create({
+            resource: fileMetadata,
+            media: media,
+            fields: 'id'
+        });
+
+        // Cleanup: delete the file from local storage after upload
+        fs.unlinkSync(path.join(__dirname, req.file.path));
+
+        res.send(`File uploaded successfully: ${file.data.id}`);
+    } catch (error) {
+        console.error('Error uploading to Google Drive:', error);
+        res.status(500).send('Error uploading to Google Drive');
+    }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
+
